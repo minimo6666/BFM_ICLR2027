@@ -1,3 +1,10 @@
 logs*
 __pycache__
 bak
+
+# Local training/evaluation artifacts are intentionally not published.
+/experiments/
+/logs/
+
+# Dataset index/cache generated on this machine.
+/_cache_*
