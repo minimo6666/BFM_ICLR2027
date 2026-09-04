@@ -27,9 +27,6 @@ import torch.distributed as dist
 
 from hparams import get_sampler_hparams
 from models.binaryae import BinaryAutoEncoder
-from models.binarylatent_flow_expectation_consistent_retrain import (
-    BinaryDiffusionFlowDecouple,
-)
 from models.transformer import TransformerBD
 from utils.reliable_data_utils import get_data_loaders
 from utils.log_utils import (
@@ -53,6 +50,22 @@ from utils.sampler_utils import (
 )
 from utils.train_utils import EMA, NativeScalerWithGradNormCount
 import misc
+
+
+def get_bfm_sampler_class():
+    """Resolve the requested BFM implementation without affecting BLD."""
+    variant = os.environ.get("BFM_MODEL_VARIANT", "tminus1").lower()
+    if variant == "tminus1":
+        from models.binarylatent_flow_expectation_consistent_retrain_tminus1 import (
+            BinaryDiffusionFlowDecouple,
+        )
+    elif variant == "original":
+        from models.binarylatent_flow_expectation_consistent_retrain import (
+            BinaryDiffusionFlowDecouple,
+        )
+    else:
+        raise ValueError(f"Unknown BFM_MODEL_VARIANT={variant!r}")
+    return BinaryDiffusionFlowDecouple
 
 
 def is_main_process(H) -> bool:
@@ -136,15 +149,51 @@ def save_training_checkpoint(
     save_stats(H, train_stats, update_step)
 
 
-def generate_preview(H, autoencoder, sampler_model, update_step: int, x=None) -> None:
+def generate_preview(H, autoencoder, sampler_model, update_step: int) -> None:
+    """Generate a fixed-size, fixed-seed comparison grid."""
     was_training = sampler_model.training
     sampler_model.eval()
     try:
-        with torch.no_grad():
-            if H.guidance:
-                images = get_online_samples_guidance(H, autoencoder, sampler_model)
-            else:
-                images = get_online_samples(H, autoencoder, sampler_model, x=x)
+        preview_samples = int(os.environ.get("PREVIEW_NUM_SAMPLES", "100"))
+        preview_batch_size = int(
+            os.environ.get("PREVIEW_SAMPLE_BATCH_SIZE", "10")
+        )
+        preview_seed = int(os.environ.get("PREVIEW_SEED", "2020"))
+        preview_temperature = float(
+            os.environ.get("PREVIEW_TEMPERATURE", "1.0")
+        )
+        device = current_device(H)
+        with torch.random.fork_rng(devices=[device.index]):
+            torch.manual_seed(preview_seed)
+            torch.cuda.manual_seed_all(preview_seed)
+            with torch.no_grad():
+                latent_batches = []
+                for start in range(0, preview_samples, preview_batch_size):
+                    batch_size = min(
+                        preview_batch_size, preview_samples - start
+                    )
+                    latent_batches.append(
+                        sampler_model.sample(
+                            sample_steps=H.sample_steps,
+                            temp=preview_temperature,
+                            b=batch_size,
+                        )
+                    )
+                latents = torch.cat(latent_batches, dim=0)
+                codes = latents.permute(0, 2, 1).reshape(
+                    preview_samples,
+                    H.codebook_size,
+                    H.latent_shape[1],
+                    H.latent_shape[2],
+                )
+                decoded = []
+                for start in range(0, preview_samples, 5):
+                    with torch.cuda.amp.autocast(enabled=H.amp):
+                        images, _, _ = autoencoder(
+                            None, code=codes[start : start + 5].float()
+                        )
+                    decoded.append(images)
+                images = torch.cat(decoded, dim=0)
         save_images(
             images,
             "samples",
@@ -188,7 +237,8 @@ def main(H, vis=None):
     # ------------------------------------------------------------------
     if H.sampler.startswith("flow_"):
         denoiser = TransformerBD(H).to(device)
-        sampler_without_ddp = BinaryDiffusionFlowDecouple(
+        bfm_sampler_class = get_bfm_sampler_class()
+        sampler_without_ddp = bfm_sampler_class(
             H, denoiser, H.codebook_size
         ).to(device)
     else:
@@ -379,7 +429,7 @@ def main(H, vis=None):
             if first_batch:
                 if is_main_process(H):
                     preview_model = ema_sampler if H.ema else sampler_without_ddp
-                    generate_preview(H, bergan, preview_model, 999999999, x=x)
+                    generate_preview(H, bergan, preview_model, 999999999)
                 if H.distributed:
                     dist.barrier()
                 first_batch = False
@@ -479,7 +529,7 @@ if __name__ == "__main__":
     H = get_sampler_hparams()
     experiment_method = os.environ.get("EXPERIMENT_METHOD", "bld").lower()
     if experiment_method == "bfm":
-        H.sampler = "flow_lsun"
+        H.sampler = os.environ.get("BFM_SAMPLER_NAME", "flow_lsun")
     elif experiment_method != "bld":
         raise ValueError(f"Unknown EXPERIMENT_METHOD={experiment_method!r}")
     config_log(H.log_dir)
