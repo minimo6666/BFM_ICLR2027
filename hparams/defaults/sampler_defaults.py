@@ -41,7 +41,7 @@ class HparamsBianryLatent(HparamsBase):
         self.reset_scaler = False
         
         super().__init__(dataset)
-        if self.dataset == "churches" or self.dataset == "bedrooms" or self.dataset == "custom":
+        if self.dataset in ("churches", "bedrooms", "ffhq", "custom"):
             self.batch_size = 128
             self.bert_n_emb = 768
             self.bert_n_head = 12

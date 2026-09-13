@@ -178,6 +178,27 @@ def get_datasets(
                 transform=transform_with_flip,
             )
 
+    elif dataset_name == "ffhq":
+        train_dataset = torchvision.datasets.ImageFolder(
+            dataset_path,
+            transform=transform,
+        )
+
+        if get_flipped:
+            train_dataset_flip = torchvision.datasets.ImageFolder(
+                dataset_path,
+                transform=transform_with_flip,
+            )
+
+        if get_val_dataset:
+            train_dataset, val_dataset = train_val_split(
+                train_dataset, train_val_split_ratio
+            )
+            if get_flipped:
+                train_dataset_flip, _ = train_val_split(
+                    train_dataset_flip, train_val_split_ratio
+                )
+
     elif dataset_name == "custom":
         train_dataset = torchvision.datasets.ImageFolder(
             dataset_path,
@@ -222,7 +243,7 @@ def get_data_loaders(
 ):
 
 
-    if dataset_name in ['bedrooms', 'churches', 'custom']:
+    if dataset_name in ['bedrooms', 'churches', 'ffhq', 'custom']:
         train_dataset, val_dataset = get_datasets(
             dataset_name,
             img_size,

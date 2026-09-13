@@ -599,3 +599,104 @@ class BinaryDiffusionFlowMultiNFESRC(BinaryDiffusionFlowTimeAligned):
             "v4_weight_max_batch": weight.max(),
             "v4_active_fraction": active.mean(),
         }
+
+
+# ============================================================================
+# V6: V4-preserving high-NFE sensitivity repair
+# ============================================================================
+
+class BinaryDiffusionFlowV6SensitivityAnchor(BinaryDiffusionFlowMultiNFESRC):
+    """
+    V6 keeps the V4 multi-NFE sensitivity profile and only restores
+    high-NFE (64/32) sensitivity mass that was diluted by averaging.
+
+        C4(t) = lambda * W4(t)
+        CH(t) = lambda * max(w64(t), w32(t))
+
+        C6(t) = min(max(C4(t), CH(t)), max_t C4(t))
+
+        L = L_base + C6(t) * (m_theta - X0)^2
+
+    The sampler is unchanged.
+    """
+
+    def __init__(self, H, denoise_fn, mask_id):
+        super().__init__(H, denoise_fn, mask_id)
+
+        # Keep original V4 lambda.
+        self.v6_lambda = self.v4_lambda
+
+        # Construct high-NFE anchor table.
+        high_weight = torch.zeros(self.num_timesteps + 1, dtype=torch.float32)
+
+        for k in (64, 32):
+            if k not in self.v4_nfes:
+                continue
+            grid = self._sampling_grid(k)
+            intervals = [(int(grid[i]), int(grid[i+1]))
+                         for i in range(len(grid)-1)]
+            s2_values = [
+                self._sensitivity_squared(t_target, t_current)
+                for t_current, t_target in intervals
+            ]
+            mean_s2 = float(np.mean(s2_values))
+            for (t_current, _), raw_s2 in zip(intervals, s2_values):
+                high_weight[t_current] = max(
+                    high_weight[t_current],
+                    float(raw_s2 / mean_s2)
+                )
+
+        c4 = self.v6_lambda * self.v4_weight_table.float()
+        ch = self.v6_lambda * high_weight.to(c4.device)
+
+        peak = float(c4[1:].max().item())
+
+        # V6: preserve V4, repair high-NFE, cap at V4 peak.
+        c6 = torch.minimum(
+            torch.maximum(c4, ch),
+            torch.tensor(peak, device=c4.device)
+        )
+
+        # Store coefficient directly (not normalized W).
+        self.register_buffer(
+            "v6_coeff_table",
+            c6,
+            persistent=False,
+        )
+
+        self.v6_peak = peak
+        self.v6_mean_coeff = float(c6[1:].mean().item())
+        self.v6_high_active = int((ch[1:] > c4[1:]).sum().item())
+
+        assert torch.all(c6[1:] >= c4[1:] - 1e-7)
+        assert torch.all(c6[1:] <= peak + 1e-7)
+
+    def _train_loss(self, x_0, label=None, x_ct=None):
+        st = self._prepare_train_state(x_0, label=label, x_ct=x_ct)
+
+        base_loss = st["base_loss"]
+
+        clean_prob = torch.sigmoid(st["clean_logits"])
+        per_example_brier = (
+            (clean_prob.float() - st["x_0"].float())
+            .square()
+            .flatten(1)
+            .mean(dim=1)
+        )
+
+        coeff = self.v6_coeff_table[st["t"]].to(
+            per_example_brier.device
+        )
+
+        aux = (coeff * per_example_brier).mean()
+        total_loss = base_loss + aux
+
+        return {
+            "loss": total_loss,
+            "bce_loss": st["base_loss_unweighted"],
+            "bfm_base_loss": base_loss,
+            "acc": st["acc"],
+            "v6_aux_loss": aux,
+            "v6_coeff_mean": coeff.mean(),
+            "v6_coeff_max": coeff.max(),
+        }
