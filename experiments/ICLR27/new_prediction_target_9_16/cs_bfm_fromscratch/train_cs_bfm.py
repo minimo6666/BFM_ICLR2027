@@ -3,11 +3,13 @@
 
 import os
 import runpy
+import sys
 from pathlib import Path
 
-ROOT = Path("/mnt/data/b/mohao/Projects/BinaryLatentDiffusion")
+THIS_DIR = Path(__file__).resolve().parent
+ROOT = THIS_DIR.parents[3]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 os.environ["EXPERIMENT_VARIANT"] = "cached_cs_bfm"
-runpy.run_path(
-    str(ROOT / "experiments/ICLR27/src_controlled_v4/train/train_bitdance_joint.py"),
-    run_name="__main__",
-)
+runpy.run_path(str(THIS_DIR / "train_bitdance_joint.py"), run_name="__main__")
