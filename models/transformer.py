@@ -129,46 +129,46 @@ class TransformerBD(nn.Module):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
     
-    def forward(self, idx, label=None, time_steps=None,):
-        # pdb.set_trace()
-        # each index maps to a (learnable) vector
-        # token_embeddings = self.tok_emb(idx)
+    def forward_features(self, idx, label=None, time_steps=None):
+        """Return the normalized per-spatial-cell Transformer features.
+
+        This is exactly the feature tensor that the legacy linear bit head sees.
+        Keeping this method inside ``TransformerBD`` lets experiments swap only
+        the prediction head while leaving the 24-layer global backbone and its
+        input/time/position conventions unchanged.
+        """
         if idx.shape[1] == 0:
-            token_embeddings = torch.zeros(idx.shape[0], 0, self.n_embd).to('cuda')
+            token_embeddings = torch.zeros(
+                idx.shape[0], 0, self.n_embd, device=idx.device, dtype=self.tok_emb.weight.dtype
+            )
         else:
-            # token_embeddings = (idx*1.0) @ self.tok_emb.weight #/ float(self.n_embd)
-            token_embeddings = (idx*1.0 - 0.5) * 2.0 @ self.tok_emb.weight #/ float(self.n_embd)
+            token_embeddings = ((idx * 1.0 - 0.5) * 2.0) @ self.tok_emb.weight
 
-        t = token_embeddings.shape[1]
-
-        position_embeddings = self.pos_emb[:, :t, :]
-
+        n_tokens = token_embeddings.shape[1]
+        position_embeddings = self.pos_emb[:, :n_tokens, :]
         x = token_embeddings + position_embeddings
 
-        time_tkn = True
-        # time_tkn = False
+        # Preserve the released baseline convention: append one time token.
         time_emb = self.time_step_embedding(time_steps)
-        if time_tkn:
-            x = torch.cat([x, time_emb], 1)
-        else:
-            x = x + time_emb
+        x = torch.cat([x, time_emb], dim=1)
 
-        if self.exp_type.endswith('tkn') and label != None:
-            # pdb.set_trace()
+        if self.exp_type.endswith('tkn') and label is not None:
             cls_emb = self.cls_embedding(label).unsqueeze(1)
-            # x = x + cls_emb
-            x = torch.cat([x, cls_emb], 1)
+            x = torch.cat([x, cls_emb], dim=1)
 
         x = self.drop(x)
-        for i, block in enumerate(self.blocks):
+        for block in self.blocks:
             if self.exp_type == 't2i_cross':
                 x = block(x, label)
             else:
                 x = block(x)
 
         x = x[:, :self.block_size, :]
-        logits = self.head(self.ln_f(x))
-        return logits
+        return self.ln_f(x)
+
+    def forward(self, idx, label=None, time_steps=None):
+        features = self.forward_features(idx, label=label, time_steps=time_steps)
+        return self.head(features)
 
 if __name__ == '__main__':
     pass

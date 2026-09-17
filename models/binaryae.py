@@ -275,7 +275,7 @@ class Generator(nn.Module):
                             nn.Conv2d(block_in_ch, block_in_ch, kernel_size=3, stride=1, padding=1),
                             nn.ReLU(),
                             nn.Conv2d(block_in_ch, H.n_channels, kernel_size=1, stride=1, padding=0)
-                        ).cuda()
+                        )
 
     def forward(self, x):
         for block in self.blocks:

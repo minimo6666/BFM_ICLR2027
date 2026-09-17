@@ -9,9 +9,13 @@ hostname = socket.gethostname()
 import torch.distributed as dist
 import pdb
 
+run = None
 if not (hostname == 'ubuntu' or hostname.startswith('Qlab')):
-    from azureml.core import Run
-    run = Run.get_context()
+    try:
+        from azureml.core import Run
+        run = Run.get_context()
+    except ImportError:
+        run = None
 
 class MovingAverage(object):
     def __init__(self, length):
@@ -141,7 +145,7 @@ def save_images(images, im_name, step, log_dir, save_individually=False, name='i
             nrow=10,
             padding=0
         )
-        if not (hostname == 'ubuntu' or hostname.startswith('Qlab')):
+        if run is not None:
             run.log_image(name=f"{im_name}_{step:09}.jpg", path=f"{log_dir}/{im_name}_{step:09}.jpg", \
                     plot=None, description=f"{log_dir}/{im_name}_{step:09}.jpg")
 
