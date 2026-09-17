@@ -35,6 +35,9 @@ from models.binarylatent_flow_expectation_consistent_retrain import (
 from models.binarylatent_flow_expectation_consistent_retrain_tminus1 import (
     BinaryDiffusionFlowDecouple as BinaryDiffusionFlowComparison,
 )
+from models.binarylatent_flow_cs_decomposed import (
+    BinaryDiffusionFlowCSDecomposed,
+)
 from models.binarylatent_flow_bitdance_joint import (
     BinaryDiffusionFlowBitDanceJoint,
 )
@@ -388,6 +391,10 @@ def main(H, vis=None):
             ).to(device)
         elif experiment_variant == "cached_direct_x0_bce":
             sampler_without_ddp = BinaryDiffusionFlowComparison(
+                H, denoiser, H.codebook_size
+            ).to(device)
+        elif experiment_variant == "cached_cs_bfm":
+            sampler_without_ddp = BinaryDiffusionFlowCSDecomposed(
                 H, denoiser, H.codebook_size
             ).to(device)
         elif experiment_variant == "bitdance_joint":
@@ -935,7 +942,8 @@ if __name__ == "__main__":
     ).strip().lower()
     if experiment_variant not in {
         "original", "comparison_bfm", "bitdance_bce_control", "bitdance_joint", "bitdance_joint_64d_inner_v2", "bitdance_joint_src_v4", "aligned_bce", "aligned_brier", "aligned_src",
-        "multi_nfe_src_v4", "v6_sensitivity_anchor", "cached_direct_x0_bce"
+        "multi_nfe_src_v4", "v6_sensitivity_anchor", "cached_direct_x0_bce",
+        "cached_cs_bfm"
     }:
         raise ValueError(
             f"Unknown EXPERIMENT_VARIANT={experiment_variant!r}"
