@@ -77,7 +77,7 @@ def add_sampler_args(parser):
     parser.add_argument("--embd_pdrop", type=float)
     parser.add_argument("--resid_pdrop", type=float)
     parser.add_argument("--sample_block_size", type=int)
-    parser.add_argument("--sampler", type=str, required=True, choices=["bld"])
+    parser.add_argument("--sampler", type=str, required=True, choices=["bld", "dfm_binary"])
     parser.add_argument("--total_steps", type=int)
     parser.add_argument("--sample_steps", type=int)
     parser.add_argument("--temp", type=float)

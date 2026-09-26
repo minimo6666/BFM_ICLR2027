@@ -1,0 +1,41 @@
+tokens: 2
+ngpus: 2
+training:
+  batch_size_per_gpu: 8
+  accum: 12
+  effective_global_batch: 192
+  n_iters: 50000
+  snapshot_freq: 10000
+  preview_freq: 2000
+  ema: 0.9999
+graph:
+  type: uniform
+noise:
+  type: geometric
+  sigma_min: 1.0e-4
+  sigma_max: 20
+model:
+  name: small
+  type: ddit
+  hidden_size: 768
+  cond_dim: 128
+  length: 1024
+  n_blocks: 12
+  n_heads: 12
+  scale_by_sigma: false
+  dropout: 0.1
+sampling:
+  predictor: analytic
+  predictor_steps: 63
+  noise_removal: true
+  total_nfe: 64
+optim:
+  weight_decay: 0
+  optimizer: AdamW
+  lr: 3.0e-4
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1.0e-8
+  warmup: 2500
+  grad_clip: 1.0
+

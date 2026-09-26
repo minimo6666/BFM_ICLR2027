@@ -9,6 +9,12 @@ def add_training_args(parser):
     parser.add_argument("--amp", const=True, action="store_const", default=False)
     parser.add_argument("--batch_size", type=int)
     parser.add_argument("--custom_dataset_path", type=str)
+    parser.add_argument(
+        "--latent_cache",
+        type=str,
+        default=None,
+        help="Optional little-endian packed uint8 binary-latent .npy cache.",
+    )
     parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--ema_beta", type=float, default=0.995)
     parser.add_argument("--ema", const=True, action="store_const", default=False)
@@ -82,7 +88,7 @@ def get_sampler_H_from_parser(parser):
     H = HparamsBinaryAE(dataset)
     H.vqgan_batch_size = H.batch_size  # used for generating samples and latents
 
-    if parser_args.sampler == "bld":
+    if parser_args.sampler in ("bld", "dfm_binary"):
         H_sampler = HparamsBianryLatent(dataset)
     else:
         raise NotImplementedError

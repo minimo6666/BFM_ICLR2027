@@ -235,8 +235,15 @@ def init_distributed_mode(args, set_dist=True):
     print('| distributed init (rank {}): {}, gpu {}'.format(
         args.rank, args.dist_url, args.gpu), flush=True)
 
-    torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                         world_size=args.world_size, rank=args.rank)
+    timeout_seconds = int(os.environ.get("BFM_DDP_TIMEOUT_SECONDS", "1800"))
+    torch.distributed.init_process_group(
+        backend=args.dist_backend,
+        init_method=args.dist_url,
+        world_size=args.world_size,
+        rank=args.rank,
+        timeout=datetime.timedelta(seconds=timeout_seconds),
+    )
+    print(f"| distributed collective timeout: {timeout_seconds}s", flush=True)
     torch.distributed.barrier()
     if set_dist:
         setup_for_distributed(args.rank == 0)
